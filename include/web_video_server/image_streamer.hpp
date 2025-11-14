@@ -55,11 +55,17 @@ public:
     rclcpp::Node::SharedPtr node);
 
   virtual void start() = 0;
+  virtual void stop();
   virtual ~ImageStreamer();
 
   bool isInactive()
   {
     return inactive_;
+  }
+
+  const std::string & getClientId() const
+  {
+    return client_id_;
   }
 
   /**
@@ -79,6 +85,7 @@ protected:
   bool inactive_;
   image_transport::Subscriber image_sub_;
   std::string topic_;
+  std::string client_id_;
 };
 
 
@@ -92,6 +99,8 @@ public:
   virtual ~ImageTransportImageStreamer();
 
   virtual void start();
+  void stop() override;
+
 
 protected:
   virtual cv::Mat decodeImage(const sensor_msgs::msg::Image::ConstSharedPtr & msg);

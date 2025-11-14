@@ -91,6 +91,9 @@ WebVideoServer::WebVideoServer(const rclcpp::NodeOptions & options)
   handler_group_.addHandlerForPath(
     "/snapshot",
     boost::bind(&WebVideoServer::handle_snapshot, this, _1, _2, _3, _4));
+  handler_group_.addHandlerForPath(
+    "/shutdown",
+    boost::bind(&WebVideoServer::handle_shutdown, this, _1, _2, _3, _4));
 
   try {
     server_.reset(
@@ -367,6 +370,54 @@ bool WebVideoServer::handle_list_streams(
     image_topic_itr = image_topics.erase(image_topic_itr);
   }
   connection->write("</ul></body></html>");
+  return true;
+}
+
+bool WebVideoServer::handle_shutdown(
+  const async_web_server_cpp::HttpRequest & request,
+  async_web_server_cpp::HttpConnectionPtr connection, const char * begin,
+  const char * end)
+{
+  std::string topic = request.get_query_param_value_or_default("topic", "");
+  std::string client_id = request.get_query_param_value_or_default("client_id", "");
+
+  auto matches_topic = [&topic](const std::string & candidate) {
+      if (topic.empty()) {
+        return true;
+      }
+      return candidate == topic ||
+             (topic[0] != '/' && candidate == "/" + topic);
+    };
+
+  std::vector<std::shared_ptr<ImageStreamer>> to_stop;
+  {
+    std::scoped_lock lock(subscriber_mutex_);
+    for (auto & streamer : image_subscribers_) {
+      if (!streamer || streamer->isInactive()) {
+        continue;
+      }
+      if (matches_topic(streamer->getTopic()) &&
+        (client_id.empty() || streamer->getClientId() == client_id))
+      {
+        to_stop.push_back(streamer);
+      }
+    }
+  }
+
+  for (auto & streamer : to_stop) {
+    streamer->stop();
+  }
+
+  if (verbose_) {
+    RCLCPP_INFO(
+      get_logger(), "Shutdown request removed %zu stream(s) for topic %s",
+      to_stop.size(), topic.empty() ? "<all>" : topic.c_str());
+  }
+
+  std::string body = "stopped=" + std::to_string(to_stop.size());
+  async_web_server_cpp::HttpReply::static_reply(
+    async_web_server_cpp::HttpReply::ok, "text/plain", body)(
+    request, connection, begin, end);
   return true;
 }
 

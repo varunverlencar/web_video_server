@@ -47,10 +47,23 @@ ImageStreamer::ImageStreamer(
 : connection_(connection), request_(request), node_(node), inactive_(false)
 {
   topic_ = request.get_query_param_value_or_default("topic", "");
+  client_id_ = request.get_query_param_value_or_default("client_id", "");
 }
 
 ImageStreamer::~ImageStreamer()
 {
+}
+
+void ImageStreamer::stop()
+{
+  inactive_ = true;
+  try {
+    if (connection_) {
+      connection_->socket().close();
+    }
+  } catch (const std::exception & e) {
+    RCLCPP_WARN(node_->get_logger(), "Failed to close MJPEG connection: %s", e.what());
+  }
 }
 
 ImageTransportImageStreamer::ImageTransportImageStreamer(
@@ -104,6 +117,14 @@ void ImageTransportImageStreamer::start()
     node_.get(), topic_,
     std::bind(&ImageTransportImageStreamer::imageCallback, this, std::placeholders::_1),
     default_transport_, qos_profile.value());
+}
+
+void ImageTransportImageStreamer::stop()
+{
+  ImageStreamer::stop();
+  if (image_sub_) {
+    image_sub_.shutdown();
+  }
 }
 
 void ImageTransportImageStreamer::initialize(const cv::Mat &)
